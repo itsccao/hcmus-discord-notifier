@@ -1,0 +1,5 @@
+aiohttp==3.13.5
+beautifulsoup4==4.15.0
+discord.py==2.7.1
+feedparser==6.0.12
+python-dotenv==1.2.2

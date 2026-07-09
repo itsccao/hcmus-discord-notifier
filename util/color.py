@@ -1,0 +1,15 @@
+class Color:
+    TEXT = "\x1b[37m"
+    DATETIME = "\x1b[92m"
+    LEVELNAME = "\x1b[95m"
+    NAME = "\x1b[31m"
+    GUILD = "\x1b[36m"
+    CHANNEL = "\x1b[36m"
+    AUTHOR = "\x1b[36m"
+    MESSAGE = "\x1b[37m"
+    COMMAND = "\x1b[33m"
+    ERROR = "\x1b[31m"
+    
+    RESET = "\x1b[0m"
+    BOLD = "\x1b[1m"
+    UNDERLINE = "\x1b[4m"

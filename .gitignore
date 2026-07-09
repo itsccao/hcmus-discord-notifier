@@ -1,0 +1,22 @@
+# Python caches and compiled artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.so
+
+# Virtual environment (this repository currently contains a venv at root)
+bin/
+lib/
+include/
+pyvenv.cfg
+
+# Common alternative venv directory names
+.venv/
+venv/
+env/
+
+# Environment
+.env
+
+# Bot runtime data
+data/
