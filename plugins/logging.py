@@ -44,29 +44,41 @@ class Logging(commands.Cog, logging.Handler):
 
     @commands.Cog.listener()
     async def on_command_error(self, ctx: commands.Context, error):
+        if isinstance(error, commands.CommandNotFound):
+            return
+
         if isinstance(error, commands.CommandOnCooldown):
-            await ctx.send(
-                f"You're on cooldown! Try again in **{round(error.retry_after, 2)}** second(s).",
-                ephemeral=True,
-            )
+            try:
+                await ctx.send(
+                    f"You're on cooldown! Try again in **{round(error.retry_after, 2)}** second(s).",
+                    ephemeral=True,
+                )
+            except discord.HTTPException as e:
+                logger.error(f"Failed to send cooldown message: {e}")
             return
 
         if isinstance(error, commands.MissingRequiredArgument):
-            await ctx.send("❌ Missing argument.")
+            try:
+                await ctx.send("❌ Missing argument.", ephemeral=True)
+            except discord.HTTPException as e:
+                logger.error(f"Failed to send missing argument message: {e}")
             return
 
-        logger.exception(f"Command error: {error}")
+        logger.exception(f"Command error in {ctx.command}: {error}")
+
         embed = discord.Embed(
-            description="",
+            title="⚠️ An Error Occurred",
+            description=f"```{error}```",
             color=discord.Colour.red(),
         )
-        await ctx.send(embed=embed)
 
-    def emit(self, record):
-        self.queue.put_nowait(record)
-
-    def close(self):
-        pass
+        try:
+            if ctx.interaction and ctx.interaction.response.is_done():
+                await ctx.interaction.followup.send(embed=embed, ephemeral=True)
+            else:
+                await ctx.send(embed=embed)
+        except discord.HTTPException as e:
+            logger.error(f"Failed to send error embed to Discord: {e}")
 
 
 async def setup(bot):
