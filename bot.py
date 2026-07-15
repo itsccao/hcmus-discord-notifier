@@ -1,6 +1,7 @@
 import discord
 import logging
 import os
+import sys
 
 from dotenv import load_dotenv
 from discord.ext import commands
@@ -8,11 +9,21 @@ from pathlib import Path
 from util.color import Color
 from util.config import is_server_allowed
 from util.http import create_connector
+from util.errors import bot_error_handler
+
+# Strip ANSI color codes when stdout is not a TTY (e.g. redirected to a file
+# in container environments), otherwise the escape sequences appear as garbage.
+if sys.stdout.isatty():
+    _log_fmt = (
+        f"{Color.DATETIME}{{asctime}} {Color.RESET}{Color.BOLD}| "
+        f"{Color.LEVELNAME}{{levelname}} {Color.RESET}{Color.BOLD}| "
+        f"{Color.NAME}{{name}}: {Color.MESSAGE}{{message}}"
+    )
+else:
+    _log_fmt = "{asctime} | {levelname} | {name}: {message}"
 
 logging.basicConfig(
-    format=f"{Color.DATETIME}{{asctime}} {Color.RESET}{Color.BOLD}| "
-           f"{Color.LEVELNAME}{{levelname}} {Color.RESET}{Color.BOLD}| "
-           f"{Color.NAME}{{name}}: {Color.MESSAGE}{{message}}",
+    format=_log_fmt,
     style="{",
     datefmt="%d-%m-%Y | %H:%M:%S",
     level=logging.INFO,
@@ -35,6 +46,8 @@ class DeltaBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents, help_command=None)
 
     async def setup_hook(self) -> None:
+        # Register the app command error handler before loading plugins
+        self.tree.on_error = bot_error_handler
         await self._load_plugins()
         await self._sync_commands()
 

@@ -20,11 +20,54 @@ class Logging(commands.Cog, logging.Handler):
         self.bot = bot
         self.owner_id = owner_id
         self.queue = asyncio.Queue()
+        self._task: asyncio.Task | None = None
+
+    def emit(self, record: logging.LogRecord) -> None:
+        """Forward log records to the bot owner via Discord DM."""
+        try:
+            msg = self.format(record)
+        except Exception:
+            self.handleError(record)
+            return
+
+        try:
+            loop = self.bot.loop
+            if loop.is_running():
+                loop.call_soon_threadsafe(self.queue.put_nowait, msg)
+        except Exception:
+            self.handleError(record)
+
+    async def _dispatch_loop(self) -> None:
+        """Consume the queue and DM each message to the owner."""
+        await self.bot.wait_until_ready()
+        while True:
+            msg = await self.queue.get()
+            try:
+                # Fetch owner each iteration so a transient failure doesn't
+                # kill the entire task permanently.
+                owner = await self.bot.fetch_user(self.owner_id)
+                # Discord messages have a 2000-char limit; truncate if needed
+                await owner.send(f"```ansi\n{msg[:1990]}\n```")
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException) as e:
+                # Use print() to avoid feeding a new record back into this
+                # same handler, which would cause a recursive logging loop.
+                print(f"[Logging] Failed to DM log record to owner: {e}", flush=True)
+            finally:
+                self.queue.task_done()
+
+    async def cog_unload(self) -> None:
+        """Clean up: cancel the dispatch task and remove the handler."""
+        if self._task and not self._task.done():
+            self._task.cancel()
+        root_logger.removeHandler(self)
 
     @commands.Cog.listener()
     async def on_ready(self):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger.info(f"Successfully Logged As {self.bot.user}")
+        # Start the background task that forwards queued log records to the owner
+        if self._task is None or self._task.done():
+            self._task = asyncio.ensure_future(self._dispatch_loop())
 
     @commands.Cog.listener()
     async def on_command(self, ctx):
@@ -99,3 +142,10 @@ async def setup(bot):
     ))
     root_logger.addHandler(logging_cog)
     await bot.add_cog(logging_cog)
+
+
+async def teardown(bot):
+    """Remove the handler when the extension is unloaded."""
+    root_logger.removeHandler(next(
+        (h for h in root_logger.handlers if isinstance(h, Logging)), None
+    ))

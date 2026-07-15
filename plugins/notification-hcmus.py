@@ -5,6 +5,7 @@ import feedparser
 import logging
 from bs4 import BeautifulSoup
 from datetime import datetime, timezone, timedelta
+from urllib.parse import urljoin
 from discord.ext import commands, tasks
 
 from util.config import load_notification_channels
@@ -120,24 +121,25 @@ class Hcmus(commands.Cog):
             return None
         soup = BeautifulSoup(html, "html.parser")
         links = soup.select("div.col-lg-9 a") or soup.select("a[href*='/tin-tuc/']")
+        base = "https://www.fit.hcmus.edu.vn/"
         for a in links:
             title = a.text.strip()
             href = a.get("href", "")
             if not title:
                 continue
-            if not href.startswith("http"):
-                href = f"https://www.fit.hcmus.edu.vn/{href.lstrip('/')}"
+            # Use urljoin so absolute URLs from other domains are not mangled
+            href = urljoin(base, href)
             return (title, href)
         return None
 
     def _get_fetcher(self, key: str):
-        """Map source key to its fetcher coroutine."""
+        """Map source key to its fetcher coroutine. Returns None for unknown keys."""
         return {
             "hcmus/root": self.fetch_hcmus_main,
             "hcmus/student-affairs": self.fetch_student_affairs,
             "hcmus/exam-schedule": self.fetch_exam_schedule,
             "hcmus/fit-news": self.fetch_fit_news,
-        }[key]
+        }.get(key)
 
     # --- Main loop ---
 
@@ -154,7 +156,10 @@ class Hcmus(commands.Cog):
             # First time ever — seed links, don't spam
             if not self.seen_links:
                 for key in source_keys:
-                    post = await self._get_fetcher(key)()
+                    fetcher = self._get_fetcher(key)
+                    if not fetcher:
+                        continue
+                    post = await fetcher()
                     if post:
                         self.seen_links[key] = post[1]
                 await self._save_seen()
@@ -163,7 +168,11 @@ class Hcmus(commands.Cog):
 
             # Check each source for new posts
             for key in source_keys:
-                post = await self._get_fetcher(key)()
+                fetcher = self._get_fetcher(key)
+                if not fetcher:
+                    logger.warning(f"No fetcher registered for source key: {key}")
+                    continue
+                post = await fetcher()
                 if not post:
                     continue
 
@@ -185,8 +194,16 @@ class Hcmus(commands.Cog):
                             timestamp=datetime.now(_UTC7),
                         )
                         embed.set_footer(text=key)
-                        await channel.send(embed=embed)
-                        logger.info(f"NEW POST! {key}: {title}")
+                        try:
+                            await channel.send(embed=embed)
+                        except discord.Forbidden:
+                            logger.warning(
+                                f"No send permission in channel {channel_id}, skipping."
+                            )
+                        except discord.HTTPException as e:
+                            logger.error(f"Failed to send embed to channel {channel_id}: {e}")
+                        else:
+                            logger.info(f"NEW POST! {key}: {title}")
 
             await self._save_seen()
 
@@ -214,7 +231,11 @@ class Hcmus(commands.Cog):
         )
         found = 0
         for key in source_keys:
-            post = await self._get_fetcher(key)()
+            fetcher = self._get_fetcher(key)
+            if not fetcher:
+                logger.warning(f"No fetcher registered for source key: {key}")
+                continue
+            post = await fetcher()
             if not post:
                 continue
             title, link = post

@@ -23,27 +23,33 @@ class System(commands.Cog):
 
     @commands.hybrid_command(description="🏓")
     async def ping(self, ctx: commands.Context):
-        start = time.perf_counter()
+        gateway_ms = int(self.bot.latency * 1000)
         content = "Pong! :ping_pong:"
 
-        elapsed_ms = int((time.perf_counter() - start) * 1000)
-        gateway_ms = int(self.bot.latency * 1000)
-        full = f"{content}\nREST API latency: {elapsed_ms}ms \nGateway API latency: {gateway_ms}ms"
-
         if ctx.interaction:
+            start = time.perf_counter()
             await ctx.send(content)
+            elapsed_ms = int((time.perf_counter() - start) * 1000)
+            full = f"{content}\nREST API latency: {elapsed_ms}ms \nGateway API latency: {gateway_ms}ms"
             await ctx.interaction.edit_original_response(content=full)
         else:
+            start = time.perf_counter()
             msg = await ctx.send(content)
+            elapsed_ms = int((time.perf_counter() - start) * 1000)
+            full = f"{content}\nREST API latency: {elapsed_ms}ms \nGateway API latency: {gateway_ms}ms"
             await msg.edit(content=full)
 
     @commands.hybrid_command(description="Gửi feedback cho tôi.")
     async def feedback(self, ctx: commands.Context, *, msg: str):
+        if not OWNER_ID:
+            await ctx.send("Feedback is not configured.", ephemeral=True)
+            return
         owner = await self.bot.fetch_user(OWNER_ID)
+        guild_info = f"**{ctx.guild.name}** - `{ctx.guild.id}`" if ctx.guild else "Direct Message"
         text = (
             f"Feedback received at {datetime.now().strftime('**%H:%M:%S**, on **%A**, **%d/%m/%Y**.')}\n"
             f"User: **{ctx.author}** - `{ctx.author.id}`.\n"
-            f"Server: **{ctx.guild.name}** - `{ctx.guild.id}`.\n"  # type: ignore
+            f"Server: {guild_info}.\n"
             f"Content:\n{msg}"
         )
         await owner.send(text)
@@ -129,13 +135,17 @@ class System(commands.Cog):
             title=f"Joined Server Count: {len(guilds)}",
             color=discord.Colour.green(),
         )
-        for guild in guilds:
+        # Discord embeds have a hard limit of 25 fields
+        display_guilds = guilds[:25]
+        for guild in display_guilds:
             status = "✅" if not allowed or guild.id in allowed else "❌"
             embed.add_field(
                 name=f"{status} {guild.name}",
                 value=f"ID: `{guild.id}`\nMembers: {guild.member_count}",
                 inline=True,
             )
+        if len(guilds) > 25:
+            embed.set_footer(text=f"Showing 25 of {len(guilds)} servers.")
         await ctx.send(embed=embed, ephemeral=True)
 
     @commands.hybrid_command(name="guild-leave", description=f"Buộc {BOT_NAME} rời server.")
@@ -230,6 +240,9 @@ class System(commands.Cog):
     async def channel_add(self, ctx: commands.Context, group: str, channel: discord.TextChannel = None):  # type: ignore
         """Add a channel to a notification group. Defaults to current channel."""
         target = channel or ctx.channel
+        if not target:
+            await ctx.send("❌ Could not determine target channel.", ephemeral=True)
+            return
         if add_notification_channel(group, target.id):
             await ctx.send(
                 f"✅ {target.mention} has been added to notification group `{group}`.",
@@ -249,6 +262,9 @@ class System(commands.Cog):
     async def channel_remove(self, ctx: commands.Context, group: str, channel: discord.TextChannel = None):  # type: ignore
         """Remove a channel from a notification group. Defaults to current channel."""
         target = channel or ctx.channel
+        if not target:
+            await ctx.send("❌ Could not determine target channel.", ephemeral=True)
+            return
         if remove_notification_channel(group, target.id):
             await ctx.send(
                 f"✅ {target.mention} has been removed from group `{group}`.",

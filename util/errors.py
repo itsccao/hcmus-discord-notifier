@@ -13,7 +13,10 @@ async def bot_error_handler(interaction, exception):
 
     if isinstance(exception, commands.NotOwner):
         embed = discord.Embed(description="Owner Only!", color=discord.Colour.red())
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        try:
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        except discord.InteractionResponded:
+            await interaction.followup.send(embed=embed, ephemeral=True)
         await asyncio.sleep(5)
         await interaction.delete_original_response()
     else:
@@ -21,3 +24,13 @@ async def bot_error_handler(interaction, exception):
             "Ignoring exception in command %s: ", interaction.command,
             exc_info=(type(exception), exception, exception.__traceback__),
         )
+        embed = discord.Embed(
+            description="An unexpected error occurred.",
+            color=discord.Colour.red(),
+        )
+        try:
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        except discord.InteractionResponded:
+            await interaction.followup.send(embed=embed, ephemeral=True)
+        except Exception:
+            pass

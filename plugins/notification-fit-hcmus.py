@@ -23,7 +23,9 @@ class FitHcmus(commands.Cog):
         self.bot = bot
         self.name = "fit@hcmus"
         self.feed_url = "https://www.fit.hcmus.edu.vn/vn/feed.aspx"
-        self.seen_links: set[str] = set()
+        # Use a list (not a set) so insertion order is preserved; the [-MAX:]
+        # cap in _save_seen then reliably keeps the most recent N links.
+        self.seen_links: list[str] = []
         self.state_loaded = False
         self.check_feed.start()
 
@@ -33,12 +35,13 @@ class FitHcmus(commands.Cog):
     async def _load_seen(self) -> None:
         """Load previously seen links from disk."""
         state = await load_state(_STATE_KEY)
-        self.seen_links = set(state.get("seen_links", []))
+        self.seen_links = list(state.get("seen_links", []))
         self.state_loaded = True
 
     async def _save_seen(self) -> None:
         """Persist seen links to disk (capped at _MAX_SEEN most recent)."""
-        recent = list(self.seen_links)[-_MAX_SEEN:]
+        # list[-N:] is well-defined and keeps the N most recently appended items
+        recent = self.seen_links[-_MAX_SEEN:]
         await save_state(_STATE_KEY, {
             "seen_links": recent,
             "last_check": datetime.now(_UTC7).isoformat(),
@@ -80,7 +83,9 @@ class FitHcmus(commands.Cog):
 
             # First time ever (no state file existed) — seed links, don't spam
             if not self.seen_links:
-                self.seen_links = {entry.link for entry in latest if hasattr(entry, "link")}
+                self.seen_links = [
+                    entry.link for entry in latest if hasattr(entry, "link")
+                ]
                 await self._save_seen()
                 logger.info(f"{self.name}: seeded {len(self.seen_links)} links (first run).")
                 return
@@ -99,22 +104,32 @@ class FitHcmus(commands.Cog):
                         continue
                     for post in reversed(new_posts):
                         embed = discord.Embed(
-                            title=f"📰 | {post.title}",
+                            title=f"\U0001f4f0 | {post.title}",
                             url=post.link,
                             color=discord.Colour.blue(),
+                            # published_parsed is a UTC time.struct_time;
+                            # attach utc tzinfo, not UTC+7, to avoid a 7-hour shift.
                             timestamp=datetime(
-                                *post.published_parsed[:6], tzinfo=_UTC7,
+                                *post.published_parsed[:6], tzinfo=timezone.utc,
                             ) if hasattr(post, "published_parsed") and post.published_parsed
                             else datetime.now(_UTC7),
                         )
                         embed.set_footer(text=self.name)
-                        await channel.send(embed=embed)
-                        logger.info(f"NEW POST: {post.title}")
+                        try:
+                            await channel.send(embed=embed)
+                        except discord.Forbidden:
+                            logger.warning(
+                                f"No send permission in channel {channel_id}, skipping."
+                            )
+                        except discord.HTTPException as e:
+                            logger.error(f"Failed to send embed to channel {channel_id}: {e}")
+                        else:
+                            logger.info(f"NEW POST: {post.title}")
 
-            # Update seen links
+            # Update seen links (append only if not already tracked)
             for entry in latest:
-                if hasattr(entry, "link"):
-                    self.seen_links.add(entry.link)
+                if hasattr(entry, "link") and entry.link not in self.seen_links:
+                    self.seen_links.append(entry.link)
             await self._save_seen()
 
         except Exception as e:
