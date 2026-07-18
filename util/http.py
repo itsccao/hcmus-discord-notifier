@@ -42,9 +42,28 @@ def create_connector() -> aiohttp.TCPConnector:
 
 
 def create_session(timeout: aiohttp.ClientTimeout | None = None) -> aiohttp.ClientSession:
-    """Create an aiohttp session with LoopSafeResolver and optional timeout."""
+    """Create an aiohttp session with LoopSafeResolver and optional timeout.
+
+    NOTE: Prefer reusing a long-lived session (created once per Cog and closed
+    in cog_unload) instead of calling this repeatedly, to avoid TCPConnector
+    accumulation and the associated RAM growth.
+    """
     return aiohttp.ClientSession(
         connector=create_connector(),
+        timeout=timeout or aiohttp.ClientTimeout(total=30),
+        headers={"User-Agent": "Mozilla/5.0"},
+    )
+
+
+def create_persistent_session(timeout: aiohttp.ClientTimeout | None = None) -> aiohttp.ClientSession:
+    """Create a long-lived aiohttp session intended to be reused across requests.
+
+    The caller is responsible for closing it (e.g. in cog_unload).
+    Uses connector_owner=True so closing the session also closes the connector.
+    """
+    return aiohttp.ClientSession(
+        connector=create_connector(),
+        connector_owner=True,
         timeout=timeout or aiohttp.ClientTimeout(total=30),
         headers={"User-Agent": "Mozilla/5.0"},
     )

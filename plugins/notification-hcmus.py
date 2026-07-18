@@ -10,7 +10,7 @@ from discord.ext import commands, tasks
 
 from util.config import load_notification_channels
 from util.state import load_state, save_state
-from util.http import create_session
+from util.http import create_persistent_session
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +26,16 @@ class Hcmus(commands.Cog):
         self.bot = bot
         self.seen_links: dict[str, str] = {}  # {source_key: last_link}
         self.state_loaded = False
+        # One persistent session for the lifetime of this Cog; avoids
+        # creating a new TCPConnector on every HTTP call (prevents RAM growth).
+        self._session = create_persistent_session(_TIMEOUT)
         self.check_new_post.start()
 
-    def cog_unload(self):  # type: ignore
+    async def cog_unload(self):  # type: ignore
         self.check_new_post.cancel()
+        # Close the shared session so the connector is released cleanly.
+        if not self._session.closed:
+            await self._session.close()
 
     # --- State persistence ---
 
@@ -51,10 +57,9 @@ class Hcmus(commands.Cog):
         last_error = None
         for attempt in range(retries + 1):
             try:
-                async with create_session(_TIMEOUT) as session:
-                    async with session.get(url) as resp:
-                        resp.raise_for_status()
-                        return await resp.text()
+                async with self._session.get(url) as resp:
+                    resp.raise_for_status()
+                    return await resp.text()
             except (aiohttp.ClientError, OSError) as e:
                 last_error = e
                 if attempt < retries:
@@ -95,18 +100,17 @@ class Hcmus(commands.Cog):
         last_error = None
         for attempt in range(3):
             try:
-                async with create_session(_TIMEOUT) as session:
-                    async with session.get(rss_url) as resp:
-                        resp.raise_for_status()
-                        body = await resp.read()
-                        feed = feedparser.parse(body)
-                        if feed.entries:
-                            entry = feed.entries[0]
-                            title = getattr(entry, "title", "").strip()
-                            link = getattr(entry, "link", "")
-                            if title and link:
-                                return (title, link)
-                        return None
+                async with self._session.get(rss_url) as resp:
+                    resp.raise_for_status()
+                    body = await resp.read()
+                    feed = feedparser.parse(body)
+                    if feed.entries:
+                        entry = feed.entries[0]
+                        title = getattr(entry, "title", "").strip()
+                        link = getattr(entry, "link", "")
+                        if title and link:
+                            return (title, link)
+                    return None
             except (aiohttp.ClientError, OSError) as e:
                 last_error = e
                 if attempt < 2:

@@ -8,7 +8,7 @@ from discord.ext import commands, tasks
 
 from util.config import load_notification_channels
 from util.state import load_state, save_state
-from util.http import create_session
+from util.http import create_persistent_session
 
 logger = logging.getLogger(__name__)
 
@@ -27,10 +27,16 @@ class FitHcmus(commands.Cog):
         # cap in _save_seen then reliably keeps the most recent N links.
         self.seen_links: list[str] = []
         self.state_loaded = False
+        # One persistent session for the lifetime of this Cog; avoids
+        # creating a new TCPConnector on every HTTP call (prevents RAM growth).
+        self._session = create_persistent_session(_TIMEOUT)
         self.check_feed.start()
 
-    def cog_unload(self):  # type: ignore
+    async def cog_unload(self):  # type: ignore
         self.check_feed.cancel()
+        # Close the shared session so the connector is released cleanly.
+        if not self._session.closed:
+            await self._session.close()
 
     async def _load_seen(self) -> None:
         """Load previously seen links from disk."""
@@ -52,11 +58,10 @@ class FitHcmus(commands.Cog):
         last_error = None
         for attempt in range(retries + 1):
             try:
-                async with create_session(_TIMEOUT) as session:
-                    async with session.get(self.feed_url) as resp:
-                        resp.raise_for_status()
-                        body = await resp.read()
-                        return feedparser.parse(body)
+                async with self._session.get(self.feed_url) as resp:
+                    resp.raise_for_status()
+                    body = await resp.read()
+                    return feedparser.parse(body)
             except (aiohttp.ClientError, OSError) as e:
                 last_error = e
                 if attempt < retries:
