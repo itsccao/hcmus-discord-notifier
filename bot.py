@@ -43,7 +43,16 @@ class DeltaBot(commands.Bot):
         intents = discord.Intents.default()
         intents.members = True
         intents.message_content = True
-        super().__init__(command_prefix="!", intents=intents, help_command=None)
+        super().__init__(
+            command_prefix="!",
+            intents=intents,
+            help_command=None,
+            # Limit discord.py's internal caches to reduce RAM usage:
+            # - Only cache the bot's own member object (needed for nick enforcement)
+            # - Keep at most 128 recent messages (default is 1000; bot never looks up old ones)
+            member_cache_flags=discord.MemberCacheFlags.none(),
+            max_messages=128,
+        )
 
     async def setup_hook(self) -> None:
         # Register the app command error handler before loading plugins

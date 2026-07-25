@@ -171,6 +171,7 @@ class Hcmus(commands.Cog):
                 return
 
             # Check each source for new posts
+            new_count = 0
             for key in source_keys:
                 fetcher = self._get_fetcher(key)
                 if not fetcher:
@@ -185,6 +186,8 @@ class Hcmus(commands.Cog):
                     continue  # Same as last time
 
                 self.seen_links[key] = link
+                title = title.strip() or "Thông báo mới"
+                new_count += 1
 
                 if channels:
                     for channel_id in channels:
@@ -208,6 +211,11 @@ class Hcmus(commands.Cog):
                             logger.error(f"Failed to send embed to channel {channel_id}: {e}")
                         else:
                             logger.info(f"NEW POST! {key}: {title}")
+
+            if new_count > 0:
+                logger.info(f"sys@hcmus: fetch done — {new_count} new post(s) sent.")
+            else:
+                logger.info("sys@hcmus: fetch done — no new posts.")
 
             await self._save_seen()
 
@@ -243,6 +251,7 @@ class Hcmus(commands.Cog):
             if not post:
                 continue
             title, link = post
+            title = title.strip() or "Thông báo mới"
             self.seen_links[key] = link
             embed.add_field(name=key, value=f"[{title}]({link})", inline=False)
             found += 1

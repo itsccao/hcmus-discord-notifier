@@ -108,16 +108,17 @@ class FitHcmus(commands.Cog):
                     if not channel:
                         continue
                     for post in reversed(new_posts):
+                        title = getattr(post, "title", "").strip() or "Thông báo mới"
                         embed = discord.Embed(
-                            title=f"\U0001f4f0 | {post.title}",
+                            title=f"\U0001f4f0 | {title}",
                             url=post.link,
                             color=discord.Colour.blue(),
-                            # published_parsed is a UTC time.struct_time;
-                            # attach utc tzinfo, not UTC+7, to avoid a 7-hour shift.
-                            timestamp=datetime(
-                                *post.published_parsed[:6], tzinfo=timezone.utc,
-                            ) if hasattr(post, "published_parsed") and post.published_parsed
-                            else datetime.now(_UTC7),
+                            # The FIT feed does not include timezone info, so
+                            # feedparser returns local time (UTC+7) in published_parsed.
+                            # Treating it as UTC caused a 7-hour forward shift.
+                            # Use the current time instead — the bot detects posts
+                            # within 10 minutes so this is accurate enough.
+                            timestamp=datetime.now(_UTC7),
                         )
                         embed.set_footer(text=self.name)
                         try:
@@ -129,7 +130,9 @@ class FitHcmus(commands.Cog):
                         except discord.HTTPException as e:
                             logger.error(f"Failed to send embed to channel {channel_id}: {e}")
                         else:
-                            logger.info(f"NEW POST: {post.title}")
+                            logger.info(f"NEW POST: {title}")
+            else:
+                logger.info(f"{self.name}: fetch done — no new posts.")
 
             # Update seen links (append only if not already tracked)
             for entry in latest:

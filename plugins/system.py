@@ -1,3 +1,4 @@
+import gc
 import time
 import discord
 import os
@@ -20,6 +21,45 @@ class System(commands.Cog):
         self.bot = bot
 
     # --- General commands ---
+
+    @commands.hybrid_command(description="📊 RAM usage của bot.")
+    @commands.is_owner()
+    async def memstats(self, ctx: commands.Context):
+        """Show RSS vs Python heap, and force a GC cycle."""
+        # Force GC to collect any unreachable cycles before measuring
+        collected = gc.collect()
+
+        try:
+            import psutil
+            proc = psutil.Process()
+            rss_mb = proc.memory_info().rss / 1024 / 1024
+            rss_line = f"{rss_mb:.1f} MB"
+        except ImportError:
+            rss_line = "*(psutil not installed)*"
+
+        # tracemalloc shows the actual Python heap usage (excludes C extensions)
+        import tracemalloc
+        if not tracemalloc.is_tracing():
+            heap_line = "*(start bot with PYTHONTRACEMALLOC=1 to enable heap tracking)*"
+        else:
+            current, peak = tracemalloc.get_traced_memory()
+            heap_line = f"current: {current/1024/1024:.1f} MB | peak: {peak/1024/1024:.1f} MB"
+
+        embed = discord.Embed(title="📊 Memory Stats", color=discord.Colour.blurple())
+        embed.add_field(name="RSS (OS view)", value=rss_line, inline=False)
+        embed.add_field(name="Python heap (tracemalloc)", value=heap_line, inline=False)
+        embed.add_field(name="GC objects collected", value=str(collected), inline=False)
+        embed.add_field(
+            name="discord.py caches",
+            value=(
+                f"Guilds: {len(self.bot.guilds)}\n"
+                f"Cached messages: {len(self.bot._connection._messages or [])}\n"
+                f"Cached members: {sum(len(g.members) for g in self.bot.guilds)}"
+            ),
+            inline=False,
+        )
+        embed.set_footer(text="RSS includes Python allocator headroom — may be higher than actual heap.")
+        await ctx.send(embed=embed, ephemeral=True)
 
     @commands.hybrid_command(description="🏓")
     async def ping(self, ctx: commands.Context):
