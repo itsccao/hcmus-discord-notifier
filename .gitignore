@@ -20,3 +20,6 @@ env/
 
 # Bot runtime data
 data/
+
+# Test
+test.md

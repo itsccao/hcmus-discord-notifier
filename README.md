@@ -1,6 +1,6 @@
-﻿# hcmus-discord-notifier
+# hcmus-discord-notifier
 
-Discord Bot gửi thông báo khi có bài đăng mới trên website của **Trường ĐH Khoa học Tự nhiên (HCMUS)** và **Khoa Công nghệ Thông tin (FIT)**.
+Discord Bot gửi thông báo khi có bài đăng mới từ các RSS feed của **Trường ĐH Khoa học Tự nhiên (HCMUS)**, **Khoa CNTT (FIT)** và **Phòng Khảo thí & ĐBCL**.
 
 ---
 
@@ -9,15 +9,13 @@ Discord Bot gửi thông báo khi có bài đăng mới trên website của **Tr
 - 🔔 Tự động kiểm tra bài đăng mới mỗi **10 phút**.
 - 🛡️ Quản lý server và kênh thông báo qua slash commands.
 
----
 
 ## Yêu cầu hệ thống
 
 - Python **3.11+**
+- RAM: >= 150MB
 
----
-
-## Cài đặt & Chạy local
+## Cài đặt
 
 ### 1. Clone repository
 
@@ -75,16 +73,13 @@ Vào [Discord Developer Portal](https://discord.com/developers/applications), ch
 python bot.py
 ```
 
----
-
 ## Danh sách lệnh
 
 ### 📢 Thông báo
 
 | Lệnh | Mô tả |
 |------|-------|
-| `!check-hcmus-root` | Xem bài đăng mới nhất của ĐH KHTN |
-| `!check-hcmus-fit` | Xem bài đăng mới nhất của FIT HCMUS |
+| `!check-rss` | Xem bài đăng mới nhất từ tất cả RSS feed đang theo dõi |
 
 ### 🛠️ Hệ thống
 
@@ -109,8 +104,6 @@ python bot.py
 | `!channel-list` | Xem tất cả kênh thông báo đã đăng ký |
 
 > Tất cả lệnh đều hỗ trợ cả prefix (`!`) lẫn slash command (`/`).
-
----
 
 ## Thêm kênh thông báo
 

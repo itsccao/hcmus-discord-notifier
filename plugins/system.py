@@ -124,8 +124,7 @@ class System(commands.Cog):
         embed.add_field(
             name="📢 Thông báo",
             value=(
-                "`check-hcmus-root` — Thông báo mới của ĐH KHTN\n"
-                "`check-hcmus-fit` — Thông báo mới của FIT HCMUS"
+                "`check-rss` — Xem bài đăng mới nhất từ các RSS feed"
             ),
             inline=False,
         )
