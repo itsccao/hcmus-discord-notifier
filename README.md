@@ -12,8 +12,7 @@ Discord Bot gửi thông báo khi có bài đăng mới từ các RSS feed của
 
 ## Yêu cầu hệ thống
 
-- Python **3.11+**
-- RAM: >= 150MB
+Thay đổi theo từng phiên bản, chi tiết xem tại [Release](https://github.com/itsccao/hcmus-discord-notifier/releases).
 
 ## Cài đặt
 

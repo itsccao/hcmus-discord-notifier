@@ -75,13 +75,20 @@ def _fmt_time(dt: datetime | None) -> str:
 
 
 def _parse_rss_datetime(entry) -> datetime | None:
-    """Extract a tz-aware UTC datetime from a feedparser entry."""
+    """Extract datetime from a feedparser entry.
+
+    NOTE: Vietnamese RSS servers (FIT, KTDBCL, ...) write local time (UTC+7)
+    in the pubDate field but label it as 'GMT'. We attach _UTC7 directly
+    to avoid double-converting (+7 h on top of an already-local timestamp).
+    """
     for attr in ("published_parsed", "updated_parsed"):
         t = getattr(entry, attr, None)
         if t:
             try:
-                epoch = calendar.timegm(t)
-                return datetime.fromtimestamp(epoch, tz=timezone.utc)
+                # Build a naive datetime from the struct then attach UTC+7
+                # (do NOT use calendar.timegm which treats the struct as UTC)
+                naive = datetime(*t[:6])
+                return naive.replace(tzinfo=_UTC7)
             except Exception:
                 continue
     return None
