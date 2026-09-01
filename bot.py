@@ -57,6 +57,30 @@ class DeltaBot(commands.Bot):
     async def setup_hook(self) -> None:
         # Register the app command error handler before loading plugins
         self.tree.on_error = bot_error_handler
+
+        async def global_interaction_check(interaction: discord.Interaction) -> bool:
+            if interaction.user.id == OWNER_ID:
+                return True
+            if interaction.guild_id:
+                if not is_server_allowed(interaction.guild_id):
+                    if not interaction.response.is_done():
+                        await interaction.response.send_message(
+                            "❌ Bot không được phép hoạt động trên server này.",
+                            ephemeral=True,
+                        )
+                    return False
+            else:
+                if interaction.user.id != OWNER_ID:
+                    if not interaction.response.is_done():
+                        await interaction.response.send_message(
+                            "❌ Chỉ Owner mới có thể dùng bot qua tin nhắn trực tiếp.",
+                            ephemeral=True,
+                        )
+                    return False
+            return True
+
+        self.tree.interaction_check = global_interaction_check
+
         await self._load_plugins()
         await self._sync_commands()
 
@@ -109,8 +133,14 @@ class DeltaBot(commands.Bot):
         if message.author == self.user:
             return
 
-        # Block messages from non-allowed servers (DMs always pass)
-        if message.guild and not is_server_allowed(message.guild.id):
+        is_owner = message.author.id == OWNER_ID
+
+        # Block messages from non-allowed servers (owner can bypass)
+        if message.guild and not is_server_allowed(message.guild.id) and not is_owner:
+            return
+
+        # Block DMs from non-owners
+        if isinstance(message.channel, discord.DMChannel) and not is_owner:
             return
 
         # Log every message
@@ -130,9 +160,8 @@ class DeltaBot(commands.Bot):
                 f"Hello from the other side of the screen, {message.author}!"
             )
 
-        # Only allow Owner to use commands through Direct Message
-        if not isinstance(message.channel, discord.DMChannel) or message.author.id == OWNER_ID:
-            await self.process_commands(message)
+        # Process prefix commands
+        await self.process_commands(message)
 
     async def on_command_error(self, ctx: commands.Context, error):
         if isinstance(error, commands.CommandNotFound):

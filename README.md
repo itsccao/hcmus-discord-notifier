@@ -7,7 +7,8 @@ Discord Bot gửi thông báo khi có bài đăng mới từ các RSS feed của
 ## Tính năng
 
 - 🔔 Tự động kiểm tra bài đăng mới mỗi **10 phút**.
-- 🛡️ Quản lý server và kênh thông báo qua slash commands.
+- 🛡️ Quản lý server và kênh thông báo qua slash commands / prefix commands.
+- 🎯 Hỗ trợ cấu hình ping role khi có thông báo mới.
 
 
 ## Yêu cầu hệ thống
@@ -93,26 +94,33 @@ python bot.py
 
 | Lệnh | Mô tả |
 |------|-------|
-| `!guild-list` | Danh sách server bot đang hoạt động |
-| `!guild-leave <guild_id>` | Buộc bot rời khỏi một server |
-| `!server-allow [guild_id]` | Thêm server vào danh sách cho phép |
-| `!server-deny [guild_id]` | Xóa server khỏi danh sách cho phép |
-| `!server-list` | Xem danh sách server được phép |
-| `!channel-add <group> [channel]` | Thêm kênh vào nhóm thông báo |
-| `!channel-remove <group> [channel]` | Xóa kênh khỏi nhóm thông báo |
-| `!channel-list` | Xem tất cả kênh thông báo đã đăng ký |
+| `!server-list` | Danh sách server bot đang tham gia (trạng thái cho phép, channel & role đã cấu hình) |
+| `!server-leave <guild_id>` | Buộc bot rời khỏi một server |
+| `!server-allow [guild_id]` | Thêm server vào danh sách cho phép (mặc định server hiện tại nếu không truyền ID) |
+| `!server-deny [guild_id]` | Xóa server khỏi danh sách cho phép (mặc định server hiện tại nếu không truyền ID) |
+| `!start` | Thiết lập kênh gửi thông báo hiện tại và hỏi Role ID để ping (yêu cầu reply bot) |
 
 > Tất cả lệnh đều hỗ trợ cả prefix (`!`) lẫn slash command (`/`).
 
-## Thêm kênh thông báo
+## Thiết lập thông báo cho server
 
-Sau khi bot đã vào server, dùng lệnh (với tư cách bot owner):
+Sau khi bot đã vào server (với tư cách bot owner):
 
-```
-/channel-add feeds #tên-kênh
-```
-
-Bot sẽ gửi thông báo vào kênh đó mỗi khi có bài đăng mới.
+1. Thêm server vào danh sách cho phép (nếu chưa thêm):
+   ```
+   !server-allow
+   ```
+2. Đi đến kênh muốn nhận thông báo và gõ:
+   ```
+   !start
+   ```
+   hoặc dùng Slash Command:
+   ```
+   /start
+   ```
+3. Bot sẽ kiểm tra quyền gửi tin nhắn trong kênh và phản hồi tin nhắn yêu cầu nhập **Role ID** cần ping.
+4. **Reply (trả lời)** tin nhắn của bot với Role ID (hoặc mention `@Role`, hoặc gõ `none`/`skip` nếu không muốn ping role nào).
+5. Bot sẽ xác nhận và lưu cấu hình vào `data/data.json`. Mỗi khi có bài đăng mới, bot sẽ gửi thông báo vào đúng kênh này và ping role đã chọn.
 
 ---
 

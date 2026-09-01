@@ -1,5 +1,7 @@
 import gc
+import re
 import time
+import asyncio
 import discord
 import os
 
@@ -7,8 +9,11 @@ from dotenv import load_dotenv
 from discord.ext import commands
 from datetime import datetime
 from util.config import (
-    add_allowed_server, remove_allowed_server, load_allowed_servers,
-    add_notification_channel, remove_notification_channel, list_notification_groups,
+    add_allowed_server,
+    remove_allowed_server,
+    load_allowed_servers,
+    set_server_config,
+    get_server_config,
 )
 
 load_dotenv()
@@ -26,7 +31,6 @@ class System(commands.Cog):
     @commands.is_owner()
     async def memstats(self, ctx: commands.Context):
         """Show RSS vs Python heap, and force a GC cycle."""
-        # Force GC to collect any unreachable cycles before measuring
         collected = gc.collect()
 
         try:
@@ -37,7 +41,6 @@ class System(commands.Cog):
         except ImportError:
             rss_line = "*(psutil not installed)*"
 
-        # tracemalloc shows the actual Python heap usage (excludes C extensions)
         import tracemalloc
         if not tracemalloc.is_tracing():
             heap_line = "*(start bot with PYTHONTRACEMALLOC=1 to enable heap tracking)*"
@@ -145,28 +148,25 @@ class System(commands.Cog):
         embed.add_field(
             name="🔒 Admins Only",
             value=(
-                "`guild-list` — Danh sách server đang hoạt động\n"
-                "`guild-leave` — Buộc bot rời server\n"
+                "`server-list` — Danh sách server đang hoạt động\n"
+                "`server-leave` — Buộc bot rời server\n"
                 "`server-allow` — Thêm server vào danh sách cho phép\n"
                 "`server-deny` — Xóa server khỏi danh sách cho phép\n"
-                "`server-list` — Xem danh sách server được phép\n"
-                "`channel-add` — Thêm channel vào nhóm thông báo\n"
-                "`channel-remove` — Xóa channel khỏi nhóm thông báo\n"
-                "`channel-list` — Xem tất cả channel thông báo"
+                "`start` — Thiết lập kênh thông báo và role ping"
             ),
             inline=False,
         )
 
         await ctx.send(embed=embed)
 
-    # --- Guild management (owner only) ---
+    # --- Server management (owner only) ---
 
-    @commands.hybrid_command(name="guild-list", description=f"Danh sách các server có {BOT_NAME}.")
+    @commands.hybrid_command(name="server-list", description=f"Danh sách các server có {BOT_NAME}.")
     @commands.is_owner()
-    async def guildlist(self, ctx: commands.Context):
+    async def server_list(self, ctx: commands.Context):
         guilds = self.bot.guilds
         if not guilds:
-            await ctx.send("Bot is not in any guilds.")
+            await ctx.send("Bot is not in any guilds.", ephemeral=True)
             return
 
         allowed = load_allowed_servers()
@@ -174,22 +174,24 @@ class System(commands.Cog):
             title=f"Joined Server Count: {len(guilds)}",
             color=discord.Colour.green(),
         )
-        # Discord embeds have a hard limit of 25 fields
         display_guilds = guilds[:25]
         for guild in display_guilds:
-            status = "✅" if not allowed or guild.id in allowed else "❌"
+            status = "✅" if guild.id in allowed else "❌"
+            cfg = get_server_config(guild.id)
+            channel_str = f"<#{cfg['channel_id']}>" if cfg and cfg.get("channel_id") else "Chưa setup"
+            role_str = f"<@&{cfg['role_id']}>" if cfg and cfg.get("role_id") else "None"
             embed.add_field(
                 name=f"{status} {guild.name}",
-                value=f"ID: `{guild.id}`\nMembers: {guild.member_count}",
+                value=f"ID: `{guild.id}`\nMembers: {guild.member_count}\nChannel: {channel_str}\nRole: {role_str}",
                 inline=True,
             )
         if len(guilds) > 25:
             embed.set_footer(text=f"Showing 25 of {len(guilds)} servers.")
         await ctx.send(embed=embed, ephemeral=True)
 
-    @commands.hybrid_command(name="guild-leave", description=f"Buộc {BOT_NAME} rời server.")
+    @commands.hybrid_command(name="server-leave", description=f"Buộc {BOT_NAME} rời server.")
     @commands.is_owner()
-    async def guildleave(self, ctx: commands.Context, guild_id: int):
+    async def server_leave(self, ctx: commands.Context, guild_id: int):
         guild = self.bot.get_guild(guild_id)
         if not guild:
             await ctx.send(f"Guild with ID `{guild_id}` not found.", ephemeral=True)
@@ -244,104 +246,96 @@ class System(commands.Cog):
         else:
             await ctx.send(f"ℹ️ Server **{name}** (`{target_id}`) was not in the allow-list.", ephemeral=True)
 
+    # --- Setup Notification Command (owner only) ---
+
     @commands.hybrid_command(
-        name="server-list",
-        description="Danh sách server được cho phép.",
+        name="start",
+        description="Thiết lập kênh gửi thông báo và role ping cho server này.",
     )
     @commands.is_owner()
-    async def server_list(self, ctx: commands.Context):
-        """Show all allowed servers."""
-        servers = load_allowed_servers()
-        if not servers:
-            await ctx.send("ℹ️ Allow-list is empty — bot works in **all** servers.", ephemeral=True)
+    async def start_setup(self, ctx: commands.Context):
+        """Interactive setup for notification channel and ping role."""
+        if not ctx.guild:
+            await ctx.send("❌ Lệnh này chỉ có thể chạy bên trong một server (guild).", ephemeral=True)
             return
 
-        lines = []
-        for gid in servers:
-            guild = self.bot.get_guild(gid)
-            name = guild.name if guild else "Unknown"
-            lines.append(f"• **{name}** — `{gid}`")
+        target_channel = ctx.channel
+        if not isinstance(target_channel, discord.TextChannel):
+            await ctx.send("❌ Kênh này không phải là TextChannel hợp lệ.", ephemeral=True)
+            return
+
+        # Check permissions in the target channel
+        bot_member = ctx.guild.me or await ctx.guild.fetch_member(self.bot.user.id)
+        perms = target_channel.permissions_for(bot_member)
+        if not (perms.send_messages and perms.embed_links):
+            await ctx.send(
+                f"❌ Bot không có đủ quyền (`Send Messages`, `Embed Links`) trong kênh {target_channel.mention}. Vui lòng cấp quyền và thử lại.",
+                ephemeral=True,
+            )
+            return
+
+        prompt_text = (
+            f"🔔 **Thiết lập thông báo cho server {ctx.guild.name}**\n"
+            f"• Kênh nhận thông báo: {target_channel.mention} (`{target_channel.id}`)\n\n"
+            f"👉 **Vui lòng reply (trả lời) tin nhắn này** với **Role ID** (hoặc mention `@Role`) để ping khi có thông báo mới.\n"
+            f"*(Nếu không muốn ping role nào, hãy reply `none` hoặc `skip`)*\n"
+            f"⏱️ *Thời gian chờ phản hồi: 60 giây.*"
+        )
+
+        if ctx.interaction:
+            await ctx.interaction.response.send_message(prompt_text)
+            prompt_msg = await ctx.interaction.original_response()
+        else:
+            prompt_msg = await ctx.send(prompt_text)
+
+        prompt_msg_id = prompt_msg.id
+
+        def check_reply(m: discord.Message) -> bool:
+            if m.author.id != ctx.author.id or m.channel.id != target_channel.id:
+                return False
+            if m.reference and m.reference.message_id == prompt_msg_id:
+                return True
+            return False
+
+        try:
+            reply_msg = await self.bot.wait_for("message", check=check_reply, timeout=60.0)
+        except asyncio.TimeoutError:
+            await ctx.send("⌛ Đã hết thời gian chờ phản hồi. Quá trình thiết lập bị hủy (cấu hình cũ được giữ nguyên).")
+            return
+
+        reply_text = reply_msg.content.strip()
+        selected_role_id = None
+        role_display = "Không ping role"
+
+        if reply_text.lower() not in ["none", "skip", "k", "khong", "không", "0", "no", "n"]:
+            match = re.search(r"\d+", reply_text)
+            if not match:
+                await reply_msg.reply("❌ Không tìm thấy Role ID hợp lệ. Quá trình thiết lập bị hủy.")
+                return
+
+            role_id = int(match.group(0))
+            role = ctx.guild.get_role(role_id)
+            if not role:
+                await reply_msg.reply(f"❌ Không tìm thấy Role với ID `{role_id}` trong server này. Quá trình thiết lập bị hủy.")
+                return
+
+            selected_role_id = role.id
+            role_display = f"{role.mention} (`{role.id}`)"
+
+        # Save configuration
+        set_server_config(ctx.guild.id, target_channel.id, selected_role_id)
 
         embed = discord.Embed(
-            title=f"Allowed Servers ({len(servers)})",
-            description="\n".join(lines),
+            title="✅ Thiết lập thông báo thành công!",
+            description=(
+                f"• **Server**: **{ctx.guild.name}** (`{ctx.guild.id}`)\n"
+                f"• **Kênh thông báo**: {target_channel.mention} (`{target_channel.id}`)\n"
+                f"• **Role ping**: {role_display}"
+            ),
             color=discord.Colour.green(),
+            timestamp=datetime.now(),
         )
-        await ctx.send(embed=embed, ephemeral=True)
-
-    # --- Notification channel management (owner only) ---
-
-    @commands.hybrid_command(
-        name="channel-add",
-        description="Thêm channel vào nhóm thông báo.",
-    )
-    @commands.is_owner()
-    async def channel_add(self, ctx: commands.Context, group: str, channel: discord.TextChannel = None):  # type: ignore
-        """Add a channel to a notification group. Defaults to current channel."""
-        target = channel or ctx.channel
-        if not target:
-            await ctx.send("❌ Could not determine target channel.", ephemeral=True)
-            return
-        if add_notification_channel(group, target.id):
-            await ctx.send(
-                f"✅ {target.mention} has been added to notification group `{group}`.",
-                ephemeral=True,
-            )
-        else:
-            await ctx.send(
-                f"ℹ️ {target.mention} is already in group `{group}`.",
-                ephemeral=True,
-            )
-
-    @commands.hybrid_command(
-        name="channel-remove",
-        description="Xóa channel khỏi nhóm thông báo.",
-    )
-    @commands.is_owner()
-    async def channel_remove(self, ctx: commands.Context, group: str, channel: discord.TextChannel = None):  # type: ignore
-        """Remove a channel from a notification group. Defaults to current channel."""
-        target = channel or ctx.channel
-        if not target:
-            await ctx.send("❌ Could not determine target channel.", ephemeral=True)
-            return
-        if remove_notification_channel(group, target.id):
-            await ctx.send(
-                f"✅ {target.mention} has been removed from group `{group}`.",
-                ephemeral=True,
-            )
-        else:
-            await ctx.send(
-                f"ℹ️ {target.mention} was not in group `{group}`.",
-                ephemeral=True,
-            )
-
-    @commands.hybrid_command(
-        name="channel-list",
-        description="Danh sách channel trong các nhóm thông báo.",
-    )
-    @commands.is_owner()
-    async def channel_list(self, ctx: commands.Context):
-        """Show all notification channels grouped by type."""
-        groups = list_notification_groups()
-        if not groups:
-            await ctx.send("ℹ️ No notification channels configured.", ephemeral=True)
-            return
-
-        embed = discord.Embed(
-            title="Notification Channels",
-            color=discord.Colour.green(),
-        )
-        for group_name, channel_ids in groups.items():
-            mentions = []
-            for cid in channel_ids:
-                ch = self.bot.get_channel(cid)
-                mentions.append(ch.mention if ch else f"`{cid}`")
-            embed.add_field(
-                name=f"📢 {group_name}",
-                value="\n".join(mentions) or "None",
-                inline=False,
-            )
-        await ctx.send(embed=embed, ephemeral=True)
+        await reply_msg.reply(embed=embed)
 
 
 async def setup(bot):

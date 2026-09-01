@@ -2,12 +2,23 @@
 Shared aiohttp utilities for the bot.
 
 Provides a DNS resolver and a pre-configured connector factory
-so all HTTP requests (bot gateway + plugins) resolve DNS consistently.
+so all HTTP requests (bot gateway + plugins) resolve DNS consistently
+and use standard browser headers to avoid WAF/Cloudflare blocks.
 """
 
 import asyncio
 import socket
 import aiohttp
+
+DEFAULT_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/128.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,application/json,*/*;q=0.8",
+    "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7",
+}
 
 
 class LoopSafeResolver(aiohttp.abc.AbstractResolver):
@@ -42,16 +53,11 @@ def create_connector() -> aiohttp.TCPConnector:
 
 
 def create_session(timeout: aiohttp.ClientTimeout | None = None) -> aiohttp.ClientSession:
-    """Create an aiohttp session with LoopSafeResolver and optional timeout.
-
-    NOTE: Prefer reusing a long-lived session (created once per Cog and closed
-    in cog_unload) instead of calling this repeatedly, to avoid TCPConnector
-    accumulation and the associated RAM growth.
-    """
+    """Create an aiohttp session with LoopSafeResolver and standard headers."""
     return aiohttp.ClientSession(
         connector=create_connector(),
         timeout=timeout or aiohttp.ClientTimeout(total=30),
-        headers={"User-Agent": "Mozilla/5.0"},
+        headers=DEFAULT_HEADERS,
     )
 
 
@@ -65,5 +71,5 @@ def create_persistent_session(timeout: aiohttp.ClientTimeout | None = None) -> a
         connector=create_connector(),
         connector_owner=True,
         timeout=timeout or aiohttp.ClientTimeout(total=30),
-        headers={"User-Agent": "Mozilla/5.0"},
+        headers=DEFAULT_HEADERS,
     )
