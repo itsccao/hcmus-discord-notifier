@@ -4,47 +4,75 @@ Bot configuration manager.
 Handles reading/writing JSON config file in the data/ directory:
 - data.json — allowed servers, configured notification channels, and ping roles.
 
-Uses atomic writes (temp + rename) for crash safety.
+Uses in-memory caching to avoid blocking synchronous disk reads on every message/interaction,
+and atomic writes with fallback for crash safety.
 """
 
 import json
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 _DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 _DATA_FILE = "data.json"
-_UTC7 = timezone(timedelta(hours=7))
+
+_cache: dict | None = None
 
 
 # ---------------------------------------------------------------------------
-# Generic JSON helpers
+# Generic JSON helpers with in-memory cache
 # ---------------------------------------------------------------------------
 
 def _read_data() -> dict:
-    """Read data.json. Returns empty dict structure on missing/corrupt."""
+    """Read data.json. Uses in-memory cache to prevent blocking disk I/O."""
+    global _cache
+    if _cache is not None:
+        return _cache
+
     path = _DATA_DIR / _DATA_FILE
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
-            return {"servers": {}}
+            data = {"servers": {}}
         if "servers" not in data or not isinstance(data["servers"], dict):
             data["servers"] = {}
-        return data
+        _cache = data
+        return _cache
     except (FileNotFoundError, json.JSONDecodeError):
-        return {"servers": {}}
+        _cache = {"servers": {}}
+        return _cache
 
 
 def _write_data(data: dict) -> None:
-    """Atomically write data.json."""
+    """Atomically write data.json and update in-memory cache."""
+    global _cache
     _DATA_DIR.mkdir(parents=True, exist_ok=True)
     path = _DATA_DIR / _DATA_FILE
     tmp = path.with_suffix(".tmp")
-    data["last_updated"] = datetime.now(_UTC7).isoformat()
-    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-    tmp.replace(path)
+    data["last_updated"] = datetime.now(timezone.utc).isoformat()
+    _cache = data
+
+    content = json.dumps(data, indent=2, ensure_ascii=False)
+    tmp.write_text(content, encoding="utf-8")
+    try:
+        tmp.replace(path)
+    except OSError:
+        # Fallback if replace fails across filesystems / overlay mounts
+        path.write_text(content, encoding="utf-8")
+        try:
+            if tmp.exists():
+                tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def reload_data() -> dict:
+    """Force reload configuration from disk."""
+    global _cache
+    _cache = None
+    return _read_data()
 
 
 # ---------------------------------------------------------------------------

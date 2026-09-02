@@ -11,14 +11,17 @@ async def bot_error_handler(interaction, exception):
     if getattr(exception, "handled", False):
         return
 
-    if isinstance(exception, commands.NotOwner):
+    if isinstance(exception, (commands.NotOwner, discord.app_commands.CheckFailure)):
         embed = discord.Embed(description="Owner Only!", color=discord.Colour.red())
         try:
             await interaction.response.send_message(embed=embed, ephemeral=True)
         except discord.InteractionResponded:
             await interaction.followup.send(embed=embed, ephemeral=True)
         await asyncio.sleep(5)
-        await interaction.delete_original_response()
+        try:
+            await interaction.delete_original_response()
+        except Exception:
+            pass
     else:
         logger.exception(
             "Ignoring exception in command %s: ", interaction.command,

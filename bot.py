@@ -8,7 +8,6 @@ from discord.ext import commands
 from pathlib import Path
 from util.color import Color
 from util.config import is_server_allowed
-from util.http import create_connector
 from util.errors import bot_error_handler
 
 # Strip ANSI color codes when stdout is not a TTY (e.g. redirected to a file
@@ -110,19 +109,23 @@ class DeltaBot(commands.Bot):
         except Exception as e:
             logging.error(f"Failed to sync commands: {e}")
 
-    async def login(self, token: str) -> None:
-        self.http.connector = create_connector()
-        await super().login(token)
-
     async def on_ready(self):
         logging.info(f"Logged in as {self.user}")
         await self._enforce_bot_name()
 
     async def _enforce_bot_name(self):
+        if not self.user:
+            return
         for guild in self.guilds:
             try:
-                if guild.me.nick != BOT_NAME:
-                    await guild.me.edit(nick=BOT_NAME)
+                me = guild.me
+                if not me:
+                    try:
+                        me = await guild.fetch_member(self.user.id)
+                    except (discord.NotFound, discord.Forbidden):
+                        continue
+                if me and me.nick != BOT_NAME:
+                    await me.edit(nick=BOT_NAME)
                     logging.info(f"Updated nickname in {guild.name} -> {BOT_NAME}")
             except discord.Forbidden:
                 logging.warning(f"Missing permission to change nickname in {guild.name}")

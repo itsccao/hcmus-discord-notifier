@@ -200,6 +200,7 @@ class System(commands.Cog):
         name = guild.name
         try:
             await guild.leave()
+            remove_allowed_server(guild_id)
             await ctx.send(f"Successfully left guild: **{name}** - `{guild_id}`", ephemeral=True)
         except Exception as e:
             await ctx.send(f"Failed to leave guild: {e}", ephemeral=True)
@@ -265,14 +266,21 @@ class System(commands.Cog):
             return
 
         # Check permissions in the target channel
-        bot_member = ctx.guild.me or await ctx.guild.fetch_member(self.bot.user.id)
-        perms = target_channel.permissions_for(bot_member)
-        if not (perms.send_messages and perms.embed_links):
-            await ctx.send(
-                f"❌ Bot không có đủ quyền (`Send Messages`, `Embed Links`) trong kênh {target_channel.mention}. Vui lòng cấp quyền và thử lại.",
-                ephemeral=True,
-            )
-            return
+        bot_member = ctx.guild.me
+        if not bot_member and self.bot.user:
+            try:
+                bot_member = await ctx.guild.fetch_member(self.bot.user.id)
+            except Exception:
+                bot_member = None
+
+        if bot_member:
+            perms = target_channel.permissions_for(bot_member)
+            if not (perms.send_messages and perms.embed_links):
+                await ctx.send(
+                    f"❌ Bot không có đủ quyền (`Send Messages`, `Embed Links`) trong kênh {target_channel.mention}. Vui lòng cấp quyền và thử lại.",
+                    ephemeral=True,
+                )
+                return
 
         prompt_text = (
             f"🔔 **Thiết lập thông báo cho server {ctx.guild.name}**\n"
