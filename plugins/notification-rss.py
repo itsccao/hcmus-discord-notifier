@@ -38,6 +38,12 @@ RSS_FEEDS: list[dict] = [
         "type": "wp_json",
     },
     {
+        "key": "api/ctsv-hcmus",
+        "name": "Cộng Tác Sinh Viên",
+        "url": "https://ctsv.hcmus.edu.vn/api/news/latest?limit=100",
+        "type": "ctsv_json",
+    },
+    {
         "key": "rss/fit-hcmus",
         "name": "fit@hcmus",
         "url": "https://www.fit.hcmus.edu.vn/vn/feed.aspx",
@@ -206,6 +212,37 @@ class RssFeedNotifier(commands.Cog):
                 if link and dt:
                     entries.append({"title": title, "link": link, "dt": dt})
 
+        elif feed_type == "ctsv_json":
+            data = await self._fetch_json(url)
+            if not isinstance(data, dict):
+                return []
+            posts = data.get("data", [])
+            if not isinstance(posts, list):
+                return []
+            for post in posts:
+                title = (post.get("title") or "").strip() or "Thông báo mới"
+                slug = post.get("slug")
+                id_code = post.get("idCode")
+                if slug:
+                    link = f"https://ctsv.hcmus.edu.vn/news/{slug}"
+                elif id_code:
+                    link = f"https://ctsv.hcmus.edu.vn/news/{id_code}"
+                else:
+                    link = ""
+                date_str = post.get("createdAt") or post.get("updatedAt")
+                dt = _parse_wp_datetime(date_str)
+                category_obj = post.get("category")
+                category_name = (
+                    category_obj.get("name").strip()
+                    if isinstance(category_obj, dict) and category_obj.get("name")
+                    else None
+                )
+                if link and dt:
+                    entry = {"title": title, "link": link, "dt": dt}
+                    if category_name:
+                        entry["category"] = category_name
+                    entries.append(entry)
+
         elif feed_type == "rss":
             body = await self._fetch_bytes(url)
             if not body:
@@ -357,10 +394,15 @@ class RssFeedNotifier(commands.Cog):
             link = None
 
         time_str = _fmt_time(entry.get("dt"))
+        desc_lines = [f"Lúc: {time_str}"]
+        if entry.get("category"):
+            desc_lines.append(f"Danh mục: {entry['category']}")
+        desc_lines.append(f"Thuộc: {feed_name}")
+
         embed = discord.Embed(
             title=f"📰 | {title}",
             url=link,
-            description=f"Lúc: {time_str}\nThuộc: {feed_name}",
+            description="\n".join(desc_lines),
             color=discord.Colour.blurple(),
             timestamp=datetime.now(timezone.utc),
         )
@@ -386,9 +428,10 @@ class RssFeedNotifier(commands.Cog):
                 continue
             e = entries[0]
             time_str = _fmt_time(e.get("dt"))
+            cat_str = f"  ·  `{e['category']}`" if e.get("category") else ""
             lines.append(
                 f"**{name}**\n"
-                f"└ [{e['title']}](<{e['link']}>)  ·  {time_str}"
+                f"└ [{e['title']}](<{e['link']}>){cat_str}  ·  {time_str}"
             )
 
         embed = discord.Embed(
