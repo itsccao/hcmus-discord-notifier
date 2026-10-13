@@ -91,7 +91,7 @@ def is_server_allowed(guild_id: int) -> bool:
     return guild_id in servers
 
 
-def add_allowed_server(guild_id: int, channel_id: int | None = None, role_id: int | None = None) -> bool:
+def add_allowed_server(guild_id: int, channel_id: int | None = None) -> bool:
     """Add a guild to the allow-list. Returns False if already present."""
     data = _read_data()
     servers = data.setdefault("servers", {})
@@ -100,7 +100,6 @@ def add_allowed_server(guild_id: int, channel_id: int | None = None, role_id: in
         return False
     servers[guild_id_str] = {
         "channel_id": channel_id,
-        "role_id": role_id,
     }
     _write_data(data)
     return True
@@ -118,13 +117,12 @@ def remove_allowed_server(guild_id: int) -> bool:
     return True
 
 
-def set_server_config(guild_id: int, channel_id: int, role_id: int | None = None) -> None:
-    """Set or overwrite notification channel and ping role for a server."""
+def set_server_config(guild_id: int, channel_id: int) -> None:
+    """Set or overwrite notification channel for a server."""
     data = _read_data()
     servers = data.setdefault("servers", {})
     servers[str(guild_id)] = {
         "channel_id": channel_id,
-        "role_id": role_id,
     }
     _write_data(data)
 
@@ -138,7 +136,7 @@ def get_server_config(guild_id: int) -> dict | None:
 def get_all_notify_targets() -> list[dict]:
     """
     Return all configured notification targets.
-    Each item is a dict: {'guild_id': int, 'channel_id': int, 'role_id': int | None}
+    Each item is a dict: {'guild_id': int, 'channel_id': int}
     """
     data = _read_data()
     targets = []
@@ -147,6 +145,5 @@ def get_all_notify_targets() -> list[dict]:
             targets.append({
                 "guild_id": int(gid_str),
                 "channel_id": int(cfg["channel_id"]),
-                "role_id": int(cfg["role_id"]) if cfg.get("role_id") else None,
             })
     return targets

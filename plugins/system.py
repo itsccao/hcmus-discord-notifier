@@ -7,7 +7,7 @@ import os
 
 from dotenv import load_dotenv
 from discord.ext import commands
-from datetime import datetime
+from datetime import datetime, timezone
 from util.config import (
     add_allowed_server,
     remove_allowed_server,
@@ -152,7 +152,7 @@ class System(commands.Cog):
                 "`server-leave` — Buộc bot rời server\n"
                 "`server-allow` — Thêm server vào danh sách cho phép\n"
                 "`server-deny` — Xóa server khỏi danh sách cho phép\n"
-                "`start` — Thiết lập kênh thông báo và role ping"
+                "`start` — Thiết lập kênh thông báo cho server"
             ),
             inline=False,
         )
@@ -179,10 +179,9 @@ class System(commands.Cog):
             status = "✅" if guild.id in allowed else "❌"
             cfg = get_server_config(guild.id)
             channel_str = f"<#{cfg['channel_id']}>" if cfg and cfg.get("channel_id") else "Chưa setup"
-            role_str = f"<@&{cfg['role_id']}>" if cfg and cfg.get("role_id") else "None"
             embed.add_field(
                 name=f"{status} {guild.name}",
-                value=f"ID: `{guild.id}`\nMembers: {guild.member_count}\nChannel: {channel_str}\nRole: {role_str}",
+                value=f"ID: `{guild.id}`\nMembers: {guild.member_count}\nChannel: {channel_str}",
                 inline=True,
             )
         if len(guilds) > 25:
@@ -251,11 +250,11 @@ class System(commands.Cog):
 
     @commands.hybrid_command(
         name="start",
-        description="Thiết lập kênh gửi thông báo và role ping cho server này.",
+        description="Thiết lập kênh gửi thông báo cho server này.",
     )
     @commands.is_owner()
     async def start_setup(self, ctx: commands.Context):
-        """Interactive setup for notification channel and ping role."""
+        """Setup notification channel for this server."""
         if not ctx.guild:
             await ctx.send("❌ Lệnh này chỉ có thể chạy bên trong một server (guild).", ephemeral=True)
             return
@@ -282,68 +281,19 @@ class System(commands.Cog):
                 )
                 return
 
-        prompt_text = (
-            f"🔔 **Thiết lập thông báo cho server {ctx.guild.name}**\n"
-            f"• Kênh nhận thông báo: {target_channel.mention} (`{target_channel.id}`)\n\n"
-            f"👉 **Vui lòng reply (trả lời) tin nhắn này** với **Role ID** (hoặc mention `@Role`) để ping khi có thông báo mới.\n"
-            f"*(Nếu không muốn ping role nào, hãy reply `none` hoặc `skip`)*\n"
-            f"⏱️ *Thời gian chờ phản hồi: 60 giây.*"
-        )
-
-        if ctx.interaction:
-            await ctx.interaction.response.send_message(prompt_text)
-            prompt_msg = await ctx.interaction.original_response()
-        else:
-            prompt_msg = await ctx.send(prompt_text)
-
-        prompt_msg_id = prompt_msg.id
-
-        def check_reply(m: discord.Message) -> bool:
-            if m.author.id != ctx.author.id or m.channel.id != target_channel.id:
-                return False
-            if m.reference and m.reference.message_id == prompt_msg_id:
-                return True
-            return False
-
-        try:
-            reply_msg = await self.bot.wait_for("message", check=check_reply, timeout=60.0)
-        except asyncio.TimeoutError:
-            await ctx.send("⌛ Đã hết thời gian chờ phản hồi. Quá trình thiết lập bị hủy (cấu hình cũ được giữ nguyên).")
-            return
-
-        reply_text = reply_msg.content.strip()
-        selected_role_id = None
-        role_display = "Không ping role"
-
-        if reply_text.lower() not in ["none", "skip", "k", "khong", "không", "0", "no", "n"]:
-            match = re.search(r"\d+", reply_text)
-            if not match:
-                await reply_msg.reply("❌ Không tìm thấy Role ID hợp lệ. Quá trình thiết lập bị hủy.")
-                return
-
-            role_id = int(match.group(0))
-            role = ctx.guild.get_role(role_id)
-            if not role:
-                await reply_msg.reply(f"❌ Không tìm thấy Role với ID `{role_id}` trong server này. Quá trình thiết lập bị hủy.")
-                return
-
-            selected_role_id = role.id
-            role_display = f"{role.mention} (`{role.id}`)"
-
         # Save configuration
-        set_server_config(ctx.guild.id, target_channel.id, selected_role_id)
+        set_server_config(ctx.guild.id, target_channel.id)
 
         embed = discord.Embed(
             title="✅ Thiết lập thông báo thành công!",
             description=(
                 f"• **Server**: **{ctx.guild.name}** (`{ctx.guild.id}`)\n"
-                f"• **Kênh thông báo**: {target_channel.mention} (`{target_channel.id}`)\n"
-                f"• **Role ping**: {role_display}"
+                f"• **Kênh thông báo**: {target_channel.mention} (`{target_channel.id}`)"
             ),
             color=discord.Colour.green(),
-            timestamp=datetime.now(),
+            timestamp=datetime.now(timezone.utc),
         )
-        await reply_msg.reply(embed=embed)
+        await ctx.send(embed=embed)
 
 
 async def setup(bot):

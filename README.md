@@ -8,7 +8,7 @@ Discord Bot gửi thông báo khi có bài đăng mới từ các RSS feed của
 
 - 🔔 Tự động kiểm tra bài đăng mới mỗi **10 phút**.
 - 🛡️ Quản lý server và kênh thông báo qua slash commands / prefix commands.
-- 🎯 Hỗ trợ cấu hình ping role khi có thông báo mới.
+- 📱 Hiển thị tiêu đề bài viết trực tiếp trên thông báo điện thoại.
 
 
 ## Yêu cầu hệ thống
@@ -94,11 +94,11 @@ python bot.py
 
 | Lệnh | Mô tả |
 |------|-------|
-| `!server-list` | Danh sách server bot đang tham gia (trạng thái cho phép, channel & role đã cấu hình) |
+| `!server-list` | Danh sách server bot đang tham gia (trạng thái cho phép, channel đã cấu hình) |
 | `!server-leave <guild_id>` | Buộc bot rời khỏi một server |
 | `!server-allow [guild_id]` | Thêm server vào danh sách cho phép (mặc định server hiện tại nếu không truyền ID) |
 | `!server-deny [guild_id]` | Xóa server khỏi danh sách cho phép (mặc định server hiện tại nếu không truyền ID) |
-| `!start` | Thiết lập kênh gửi thông báo hiện tại và hỏi Role ID để ping (yêu cầu reply bot) |
+| `!start` | Thiết lập kênh hiện tại làm kênh nhận thông báo cho server |
 
 > Tất cả lệnh đều hỗ trợ cả prefix (`!`) lẫn slash command (`/`).
 
@@ -118,9 +118,8 @@ Sau khi bot đã vào server (với tư cách bot owner):
    ```
    /start
    ```
-3. Bot sẽ kiểm tra quyền gửi tin nhắn trong kênh và phản hồi tin nhắn yêu cầu nhập **Role ID** cần ping.
-4. **Reply (trả lời)** tin nhắn của bot với Role ID (hoặc mention `@Role`, hoặc gõ `none`/`skip` nếu không muốn ping role nào).
-5. Bot sẽ xác nhận và lưu cấu hình vào `data/data.json`. Mỗi khi có bài đăng mới, bot sẽ gửi thông báo vào đúng kênh này và ping role đã chọn.
+3. Bot sẽ kiểm tra quyền hạn (`Send Messages`, `Embed Links`) trong kênh và lưu cấu hình vào `data/data.json`.
+4. Mỗi khi có bài đăng mới, bot sẽ gửi thông báo vào kênh này. Tiêu đề bài viết sẽ được đưa vào nội dung tin nhắn để người dùng nhận được thông báo đẩy (push notification) kèm tiêu đề rõ ràng trên điện thoại.
 
 ---
 

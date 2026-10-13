@@ -17,6 +17,7 @@ import aiohttp
 import asyncio
 import feedparser
 import calendar
+import html
 import logging
 from datetime import datetime, timezone
 from discord.ext import commands, tasks
@@ -201,7 +202,8 @@ class RssFeedNotifier(commands.Cog):
             if not isinstance(data, list):
                 return []
             for post in data:
-                title = post.get("title", {}).get("rendered", "").strip() or "Thông báo mới"
+                raw_title = post.get("title", {}).get("rendered", "")
+                title = html.unescape(raw_title).strip() or "Thông báo mới"
                 link = post.get("link", "")
                 date_gmt = post.get("date_gmt")
                 date_local = post.get("date")
@@ -220,7 +222,8 @@ class RssFeedNotifier(commands.Cog):
             if not isinstance(posts, list):
                 return []
             for post in posts:
-                title = (post.get("title") or "").strip() or "Thông báo mới"
+                raw_title = post.get("title") or ""
+                title = html.unescape(raw_title).strip() or "Thông báo mới"
                 slug = post.get("slug")
                 id_code = post.get("idCode")
                 if slug:
@@ -249,7 +252,8 @@ class RssFeedNotifier(commands.Cog):
                 return []
             feed = await asyncio.to_thread(feedparser.parse, body)
             for entry in feed.entries:
-                title = getattr(entry, "title", "").strip() or "Thông báo mới"
+                raw_title = getattr(entry, "title", "")
+                title = html.unescape(raw_title).strip() or "Thông báo mới"
                 link = getattr(entry, "link", "")
                 dt = _parse_rss_datetime(entry)
                 if link and dt:
@@ -318,7 +322,6 @@ class RssFeedNotifier(commands.Cog):
                     if targets:
                         for target in targets:
                             channel_id = target["channel_id"]
-                            role_id = target.get("role_id")
                             channel = self.bot.get_channel(channel_id)
                             if not channel:
                                 try:
@@ -326,15 +329,13 @@ class RssFeedNotifier(commands.Cog):
                                 except (discord.NotFound, discord.Forbidden, discord.HTTPException):
                                     continue
 
-                            content = f"<@&{role_id}>" if role_id else None
-
                             for entry in entries_to_send:
-                                embed = self._build_embed(entry, name)
+                                msg_text = self._format_message(entry, name)
                                 try:
                                     await channel.send(
-                                        content=content,
-                                        embed=embed,
-                                        allowed_mentions=discord.AllowedMentions(roles=True),
+                                        content=msg_text,
+                                        suppress_embeds=True,
+                                        allowed_mentions=discord.AllowedMentions.none(),
                                     )
                                     # Small pause to prevent Discord rate limits / 429
                                     await asyncio.sleep(0.5)
@@ -378,35 +379,29 @@ class RssFeedNotifier(commands.Cog):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _build_embed(entry: dict, feed_name: str) -> discord.Embed:
+    def _format_message(entry: dict, feed_name: str) -> str:
         """
-        Tạo embed Discord:
-            📰 | <title>  (clickable → link)
-            Lúc: HH:MM AM/PM dd/mm/yyyy
-            Thuộc: <tên rss>  (footer)
+        Định dạng tin nhắn thông báo (không dùng embed):
+            :newspaper: | **<title>**
+
+            Source: <name>
+            Category: <tên category> (nếu là CTSV)
+
+            <url của post, bỏ embed của link>
         """
         title = (entry.get("title") or "Thông báo mới").strip()
-        if len(title) > 250:
-            title = title[:247] + "..."
-
         link = (entry.get("link") or "").strip()
-        if not (link.startswith("http://") or link.startswith("https://")):
-            link = None
 
-        time_str = _fmt_time(entry.get("dt"))
-        desc_lines = [f"Lúc: {time_str}"]
+        lines = [f":newspaper: | **{title}**", "", f"Source: {feed_name}"]
         if entry.get("category"):
-            desc_lines.append(f"Danh mục: {entry['category']}")
-        desc_lines.append(f"Thuộc: {feed_name}")
+            lines.append(f"Category: {entry['category']}")
 
-        embed = discord.Embed(
-            title=f"📰 | {title}",
-            url=link,
-            description="\n".join(desc_lines),
-            color=discord.Colour.blurple(),
-            timestamp=datetime.now(timezone.utc),
-        )
-        return embed
+        if link:
+            clean_link = f"<{link}>" if not (link.startswith("<") and link.endswith(">")) else link
+            lines.append("")
+            lines.append(clean_link)
+
+        return "\n".join(lines)
 
     # ------------------------------------------------------------------
     # Manual check slash command

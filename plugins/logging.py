@@ -54,6 +54,13 @@ class Logging(commands.Cog):
                 logger.error(f"Failed to send missing argument message: {e}")
             return
 
+        if isinstance(error, (commands.CheckFailure, commands.NotOwner)):
+            try:
+                await ctx.send("❌ Bạn không có quyền sử dụng lệnh này.", ephemeral=True)
+            except discord.HTTPException as e:
+                logger.error(f"Failed to send permission error message: {e}")
+            return
+
         logger.exception(f"Command error in {ctx.command}: {error}")
 
         embed = discord.Embed(
